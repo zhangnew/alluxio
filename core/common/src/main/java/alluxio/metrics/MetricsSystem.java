@@ -22,11 +22,14 @@ import alluxio.util.CommonUtils;
 import alluxio.util.ConfigurationUtils;
 import alluxio.util.network.NetworkAddressUtils;
 
+import com.codahale.metrics.CachedGauge;
 import com.codahale.metrics.Counter;
 import com.codahale.metrics.Gauge;
 import com.codahale.metrics.Meter;
 import com.codahale.metrics.MetricRegistry;
 import com.codahale.metrics.Timer;
+import com.codahale.metrics.jvm.CachedThreadStatesGaugeSet;
+import com.codahale.metrics.jvm.ClassLoadingGaugeSet;
 import com.codahale.metrics.jvm.GarbageCollectorMetricSet;
 import com.codahale.metrics.jvm.JvmAttributeGaugeSet;
 import com.codahale.metrics.jvm.MemoryUsageGaugeSet;
@@ -142,6 +145,8 @@ public final class MetricsSystem {
     METRIC_REGISTRY.registerAll(new JvmAttributeGaugeSet());
     METRIC_REGISTRY.registerAll(new GarbageCollectorMetricSet());
     METRIC_REGISTRY.registerAll(new MemoryUsageGaugeSet());
+    METRIC_REGISTRY.registerAll(new ClassLoadingGaugeSet());
+    METRIC_REGISTRY.registerAll(new CachedThreadStatesGaugeSet(5, TimeUnit.SECONDS));
   }
 
   @GuardedBy("MetricsSystem")
@@ -552,6 +557,24 @@ public final class MetricsSystem {
   public static synchronized <T> void registerGaugeIfAbsent(String name, Gauge<T> metric) {
     if (!METRIC_REGISTRY.getMetrics().containsKey(name)) {
       METRIC_REGISTRY.register(name, metric);
+    }
+  }
+
+  /**
+   * Registers a cached gauge if it has not been registered.
+   *
+   * @param name the gauge name
+   * @param metric the gauge
+   * @param <T> the type
+   */
+  public static synchronized <T> void registerCachedGaugeIfAbsent(String name, Gauge<T> metric) {
+    if (!METRIC_REGISTRY.getMetrics().containsKey(name)) {
+      METRIC_REGISTRY.register(name, new CachedGauge<T>(10, TimeUnit.MINUTES) {
+        @Override
+        protected T loadValue() {
+          return metric.getValue();
+        }
+      });
     }
   }
 

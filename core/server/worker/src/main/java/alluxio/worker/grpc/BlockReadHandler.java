@@ -11,7 +11,6 @@
 
 package alluxio.worker.grpc;
 
-import alluxio.AlluxioURI;
 import alluxio.Constants;
 import alluxio.conf.PropertyKey;
 import alluxio.conf.ServerConfiguration;
@@ -21,7 +20,6 @@ import alluxio.exception.status.InvalidArgumentException;
 import alluxio.grpc.Chunk;
 import alluxio.grpc.DataMessage;
 import alluxio.grpc.ReadResponse;
-import alluxio.metrics.MetricInfo;
 import alluxio.metrics.MetricKey;
 import alluxio.metrics.MetricsSystem;
 import alluxio.network.protocol.databuffer.DataBuffer;
@@ -32,7 +30,6 @@ import alluxio.util.LogUtils;
 import alluxio.util.logging.SamplingLogger;
 import alluxio.wire.BlockReadRequest;
 import alluxio.worker.block.BlockWorker;
-import alluxio.worker.block.UnderFileSystemBlockReader;
 import alluxio.worker.block.io.BlockReader;
 
 import com.codahale.metrics.Counter;
@@ -90,6 +87,10 @@ public class BlockReadHandler implements StreamObserver<alluxio.grpc.ReadRequest
   private static final Logger SLOW_BUFFER_LOG = new SamplingLogger(LOG, Constants.MINUTE_MS);
   private static final long SLOW_BUFFER_MS =
       ServerConfiguration.getMs(PropertyKey.WORKER_REMOTE_IO_SLOW_THRESHOLD);
+  /** Metrics. */
+  private static final Counter RPC_READ_COUNT =
+      MetricsSystem.counterWithTags(MetricKey.WORKER_ACTIVE_RPC_READ_COUNT.getName(),
+            MetricKey.WORKER_ACTIVE_RPC_READ_COUNT.isClusterAggregated());
 
   /** The executor to run {@link DataReader}. */
   private final ExecutorService mDataReaderExecutor;
@@ -283,6 +284,7 @@ public class BlockReadHandler implements StreamObserver<alluxio.grpc.ReadRequest
       context.setMeter(MetricsSystem
           .meter(MetricKey.WORKER_BYTES_READ_REMOTE_THROUGHPUT.getName()));
     }
+    RPC_READ_COUNT.inc();
     return context;
   }
 
@@ -484,6 +486,7 @@ public class BlockReadHandler implements StreamObserver<alluxio.grpc.ReadRequest
         }
       } finally {
         context.setBlockReader(null);
+        RPC_READ_COUNT.dec();
       }
     }
 
@@ -554,25 +557,13 @@ public class BlockReadHandler implements StreamObserver<alluxio.grpc.ReadRequest
         try {
           mWorker.moveBlock(request.getSessionId(), request.getId(), 0);
         } catch (BlockDoesNotExistException e) {
-          LOG.debug("Block {} to promote does not exist in Alluxio: {}", request.getId(),
-              e.getMessage());
+          LOG.debug("Block {} to promote does not exist in Alluxio", request.getId(), e);
         } catch (Exception e) {
-          LOG.warn("Failed to promote block {}: {}", request.getId(), e.getMessage());
+          LOG.warn("Failed to promote block {}: {}", request.getId(), e.toString());
         }
       }
       BlockReader reader = mWorker.createBlockReader(request);
       context.setBlockReader(reader);
-      if (reader instanceof UnderFileSystemBlockReader) {
-        AlluxioURI ufsMountPointUri =
-            ((UnderFileSystemBlockReader) reader).getUfsMountPointUri();
-        String ufsString = MetricsSystem.escape(ufsMountPointUri);
-        MetricKey counterKey = MetricKey.WORKER_BYTES_READ_UFS;
-        MetricKey meterKey = MetricKey.WORKER_BYTES_READ_UFS_THROUGHPUT;
-        context.setCounter(MetricsSystem.counterWithTags(counterKey.getName(),
-            counterKey.isClusterAggregated(), MetricInfo.TAG_UFS, ufsString));
-        context.setMeter(MetricsSystem.meterWithTags(meterKey.getName(),
-            meterKey.isClusterAggregated(), MetricInfo.TAG_UFS, ufsString));
-      }
     }
 
     /**

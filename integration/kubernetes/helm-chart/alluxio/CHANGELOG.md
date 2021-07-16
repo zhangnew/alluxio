@@ -163,3 +163,28 @@
 0.6.17
 
 - Add hostAliases in Master and Worker Pods
+
+0.6.18
+
+- Add support for Node tolerations
+
+0.6.19
+
+- Add serviceAccountName in Master, Worker, and FUSE Pods
+
+0.6.20
+
+- Add Master StatefulSet podManagementPolicy Parallel (see Issue [#13323](https://github.com/Alluxio/alluxio/issues/13323))
+
+0.6.21
+
+- Change logserver PVC default selectors to empty, so dynamic provisioning works by default configuration.
+
+0.6.22
+- Enable configuring logserver Deployment strategy to address [#13422](https://github.com/Alluxio/alluxio/issues/13422)
+
+0.6.23
+- Add Alluxio CSI support
+
+0.6.24
+- Fix Alluxio CSI `nodeplugin.yaml` indentation

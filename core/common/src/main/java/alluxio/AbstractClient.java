@@ -124,10 +124,14 @@ public abstract class AbstractClient implements Client {
 
   protected long getRemoteServiceVersion() throws AlluxioStatusException {
     // Calling directly as this method is subject to an encompassing retry loop.
-    return mVersionService
-        .getServiceVersion(
-            GetServiceVersionPRequest.newBuilder().setServiceType(getRemoteServiceType()).build())
-        .getVersion();
+    try {
+      return mVersionService
+          .getServiceVersion(
+              GetServiceVersionPRequest.newBuilder().setServiceType(getRemoteServiceType()).build())
+          .getVersion();
+    } catch (Throwable t) {
+      throw AlluxioStatusException.fromThrowable(t);
+    }
   }
 
   /**
@@ -238,8 +242,8 @@ public abstract class AbstractClient implements Client {
             getServiceName(), mAddress);
         return;
       } catch (IOException e) {
-        LOG.debug("Failed to connect ({}) with {} @ {}: {}", retryPolicy.getAttemptCount(),
-            getServiceName(), mAddress, e.getMessage());
+        LOG.debug("Failed to connect ({}) with {} @ {}", retryPolicy.getAttemptCount(),
+            getServiceName(), mAddress, e);
         lastConnectFailure = e;
         if (e instanceof UnauthenticatedException) {
           // If there has been a failure in opening GrpcChannel, it's possible because
@@ -264,7 +268,7 @@ public abstract class AbstractClient implements Client {
               retryPolicy.getAttemptCount()));
     }
 
-    /**
+    /*
      * Throw as-is if {@link UnauthenticatedException} occurred.
      */
     if (lastConnectFailure instanceof UnauthenticatedException) {
@@ -275,9 +279,12 @@ public abstract class AbstractClient implements Client {
           new ServiceNotFoundException(lastConnectFailure.getMessage(), lastConnectFailure));
     }
 
-    throw new UnavailableException(String.format("Failed to connect to master (%s) after %s "
-            + "attempts of %s",
-        mAddress, retryPolicy.getAttemptCount(), getServiceName()), lastConnectFailure);
+    throw new UnavailableException(
+        String.format(
+            "Failed to connect to master (%s) after %s attempts."
+                + "Please check if Alluxio master is currently running on \"%s\". Service=\"%s\"",
+            mAddress, retryPolicy.getAttemptCount(), mAddress, getServiceName()),
+        lastConnectFailure);
   }
 
   /**
